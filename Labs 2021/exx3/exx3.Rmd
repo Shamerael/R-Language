@@ -1,0 +1,297 @@
+---
+title: "Упражнение 3"
+author: "Спиридонова Алина"
+date: "02 03 2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library('titanic')
+library('GGally')
+library('MASS')
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo = FALSE}
+my.seed <- 	234
+train.percent <- 0.75
+
+options("ggmatrix.progress.bar" = FALSE)
+
+head(titanic_train)
+
+str(titanic_train)
+```
+
+Удалили из таблицы ненужеые столбцы
+
+
+```{r, echo = FALSE}
+titanic_train_1 <- subset(titanic_train, select = c(Survived, Pclass, Sex, Age, SibSp, Parch, Fare))
+titanic_train_1
+```
+
+
+На графиках ниже выжившие в катастрофе Титаника (survived) показан красным.
+
+Для наглядности разобьем все на два графика
+
+
+```{r, echo = FALSE}
+
+ggp <- ggpairs(titanic_train_1[1:4], aes(colour =  as.factor(Survived), alpha = 0.4)) +
+  scale_colour_manual(values = c('darkgreen', 'red')) + 
+  scale_fill_manual(values = c('darkgreen', 'red')) 
+print(ggp, progress = FALSE)
+```
+
+```{r, echo = FALSE}
+
+ggp <- ggpairs(titanic_train_1[c(1, 5, 6, 7)], aes(colour =  as.factor(Survived), alpha = 0.4)) +
+  scale_colour_manual(values = c('darkgreen', 'red')) + 
+  scale_fill_manual(values = c('darkgreen', 'red')) 
+print(ggp, progress = FALSE)
+```
+
+
+
+Обратите внимание: априорные вероятности классов, которые можно оценить как доли наблюдений каждого класса в выборке, неодинаковы. Выживших (Survived == 1)  меньше:
+
+```{r, echo = FALSE}
+table(titanic_train_1$Survived) / sum(table(titanic_train_1$Survived))
+```
+
+Отбираем наблюдения в обучающую выборку
+
+
+```{r, echo = FALSE}
+set.seed(my.seed)
+inTrain <- sample(seq_along(titanic_train_1$Survived),
+                  nrow(titanic_train_1)*train.percent)
+df <- titanic_train_1[inTrain, ]
+
+# фактические значения на обучающей выборке
+Факт <- df$Survived
+```
+
+Строим модели, чтобы спрогнозировать Survived
+
+Логистическая регрессия
+
+```{r, echo = FALSE}
+model.logit <- glm(Survived ~ ., data = df, family = 'binomial')
+summary(model.logit)
+```
+
+Параметры модели логистической регрессии значимы с вероятностью 0.99, кроме *Parch* и *Fare*. Эти параметры не значимы. Взаимодействие объясняющих переменных приводит к изменению знака коэффициента при факторах *Pclass*, *Sexmale*, *Age* и *SibSp*.
+
+
+
+```{r, echo = FALSE}
+# прогноз: вероятности принадлежности классу 'Yes' (дефолт)
+p.logit <- predict(model.logit, df, type = 'response')
+Прогноз <- factor(ifelse(p.logit > 0.5, 2, 1),
+                  levels = c(1, 2),
+                  labels = c('No', 'Yes'))
+
+# матрица неточностей
+conf.m <- table(Факт, Прогноз)
+conf.m
+```
+
+Обратите внимание: вектор p.logit состоит из вероятностей принадлежности наблюдений к классам, а не из меток этих классов. Поэтому для прогноза нужно сделать разделение на два класса вручную, используя какую-то границу отсечения. В данном случае это 0.5 – значение по умолчанию. 
+
+У этой модели  чувствительность стремится к высокой, то есть находится на среднем уровне:
+
+
+```{r, echo = FALSE}
+
+A <- conf.m[2, 2] / sum(conf.m[2, ])
+
+B <- conf.m[1, 1] / sum(conf.m[1, ])
+  
+C <- sum(diag(conf.m)) / sum(conf.m)
+
+
+name <- c("Чувствительность", "Специфичность", "верность")
+ABC <- c(A, B, C)
+
+har <- data.frame(Название = name, Значение = ABC) 
+har
+```
+
+Строим модели, чтобы спрогнозировать Survived уже без незначимых переменных
+
+
+```{r, echo = FALSE}
+model.logit1 <- glm(Survived ~ Pclass + Sex + Age + SibSp, data = df, family = 'binomial')
+summary(model.logit1)
+```
+
+Параметры модели логистической регрессии значимы с вероятностью 0.99, кроме *Parch* и *Fare*. Эти параметры не значимы. Взаимодействие объясняющих переменных приводит к изменению знака коэффициента при факторах *Pclass*, *Sexmale*, *Age* и *SibSp*.
+
+
+
+```{r, echo = FALSE}
+# прогноз: вероятности принадлежности классу 'Yes' (дефолт)
+p.logit1 <- predict(model.logit1, df, type = 'response')
+Прогноз <- factor(ifelse(p.logit > 0.5, 2, 1),
+                  levels = c(1, 2),
+                  labels = c('No', 'Yes'))
+
+# матрица неточностей
+conf.m <- table(Факт, Прогноз)
+conf.m
+```
+
+Обратите внимание: вектор p.logit состоит из вероятностей принадлежности наблюдений к классам, а не из меток этих классов. Поэтому для прогноза нужно сделать разделение на два класса вручную, используя какую-то границу отсечения. В данном случае это 0.5 – значение по умолчанию. 
+
+У этой модели  чувствительность стремится к высокой, то есть находится на среднем уровне:
+
+
+```{r, echo = FALSE}
+
+A1 <- conf.m[2, 2] / sum(conf.m[2, ])
+
+B1 <- conf.m[1, 1] / sum(conf.m[1, ])
+  
+C1 <- sum(diag(conf.m)) / sum(conf.m)
+
+
+name1 <- c("Чувствительность", "Специфичность", "верность")
+ABC1 <- c(A, B, C)
+
+har1 <- data.frame(Название = name1, Значение = ABC1) 
+har1
+```
+
+
+###QDA
+
+```{r, echo = FALSE}
+model.qda <- qda(Survived ~  Sex + Age + Pclass + SibSp , data = titanic_train_1[inTrain, ])
+model.qda
+
+
+
+# прогноз: вероятности принадлежности классу 'Yes' (дефолт)
+p.qda <- predict(model.qda, df, type = 'response')
+Прогноз <- factor(ifelse(p.qda$posterior[ , 'Yes'] > 0.5, 
+                         2, 1),
+                  levels = c(1, 2),
+                  labels = c('No', 'Yes'))
+
+# матрица неточностей
+conf.m <- table(Факт, Прогноз)
+conf.m
+```
+
+Разделяющая граница квадратичного дисперсионного анализа нелинейна, поэтому коэффициентов в отчёте мы не видим. Чувсивительность чуть хуже, чем у логистичесокй регрессии.
+
+
+```{r, echo = FALSE}
+
+A2 <- conf.m[2, 2] / sum(conf.m[2, ])
+
+B2 <- conf.m[1, 1] / sum(conf.m[1, ])
+  
+C2 <- sum(diag(conf.m)) / sum(conf.m)
+
+
+name2 <- c("Чувствительность", "Специфичность", "верность")
+ABC2 <- c(A2, B2, C2)
+
+har2 <- data.frame(Название = name2, Значение = ABC2) 
+har2
+```
+Очевидно, такая ситуация с чувствительностью не может нас устраивать, поскольку высокое значение верности модели (accuracy) обусловлено исключительно большой долей одного из классов в выборке. В такой ситуации надо пожертвовать небольшой частью специфичности, чтобы подтянуть чувствительность. Сделаем это, изменив границу отсечения классов.
+
+####Подбор границы отсечения вероятностей классов
+
+####ROC-кривая для LDA
+
+Для начала построим график совместного изменения чувствительности и специфичности с изменением вероятности отсечения от 0 до 1 – ROC-кривую. Для примера возьмём модель LDA.
+
+```{r, echo = FALSE}
+# считаем 1-SPC и TPR для всех вариантов границы отсечения
+x <- NULL    # для (1 - SPC)
+y <- NULL    # для TPR
+
+# заготовка под матрицу неточностей
+tbl <- as.data.frame(matrix(rep(0, 4), 2, 2))
+rownames(tbl) <- c('fact.No', 'fact.Yes')
+colnames(tbl) <- c('predict.No', 'predict.Yes')
+
+# вектор вероятностей для перебора
+p.vector <- seq(0, 1, length = 501)
+
+# цикл по вероятностям отсечения
+for (p in p.vector){
+    # прогноз
+    Прогноз <- factor(ifelse(p.lda$posterior[, 'Yes'] > p, 
+                             2, 1),
+                      levels = c(1, 2),
+                      labels = c('No', 'Yes'))
+    
+    # фрейм со сравнением факта и прогноза
+    df.compare <- data.frame(Факт = Факт, Прогноз = Прогноз)
+    
+    # заполняем матрицу неточностей
+    tbl[1, 1] <- nrow(df.compare[df.compare$Факт == 'No' & df.compare$Прогноз == 'No', ])
+    tbl[2, 2] <- nrow(df.compare[df.compare$Факт == 'Yes' & df.compare$Прогноз == 'Yes', ])
+    tbl[1, 2] <- nrow(df.compare[df.compare$Факт == 'No' & df.compare$Прогноз == 'Yes', ])
+    tbl[2, 1] <- nrow(df.compare[df.compare$Факт == 'Yes' & df.compare$Прогноз == 'No', ])
+    
+    # считаем характеристики
+    TPR <- tbl[2, 2] / sum(tbl[2, 2] + tbl[2, 1])
+    y <- c(y, TPR)
+    SPC <- tbl[1, 1] / sum(tbl[1, 1] + tbl[1, 2])
+    x <- c(x, 1 - SPC)
+}
+
+# строим ROC-кривую
+par(mar = c(5, 5, 1, 1))
+# кривая
+plot(x, y, type = 'l', col = 'blue', lwd = 3,
+     xlab = '(1 - SPC)', ylab = 'TPR', 
+     xlim = c(0, 1), ylim = c(0, 1))
+# прямая случайного классификатора
+abline(a = 0, b = 1, lty = 3, lwd = 2)
+
+# точка для вероятности 0.5
+points(x[p.vector == 0.5], y[p.vector == 0.5], pch = 16)
+text(x[p.vector == 0.5], y[p.vector == 0.5], 'p = 0.5', pos = 4)
+# точка для вероятности 0.2
+points(x[p.vector == 0.2], y[p.vector == 0.2], pch = 16)
+text(x[p.vector == 0.2], y[p.vector == 0.2], 'p = 0.2', pos = 4)
+```
+Видно, что изменение границы отсечения с 0.5 до 0.2 увеличивает чувствительность модели почти в три раза, в то время как специфичность ухудшается незначительно. Матрица неточностей и её характеристики для LDA с p = 0.2:
+
+
+```{r, echo = FALSE}
+Прогноз <- factor(ifelse(p.lda$posterior[, 'Yes'] > 0.2, 
+                             2, 1),
+                      levels = c(1, 2),
+                      labels = c('No', 'Yes'))
+
+conf.m <- table(Факт, Прогноз)
+conf.m
+```
+
+```{r, echo = FALSE}
+
+A <- conf.m[2, 2] / sum(conf.m[2, ])
+
+B <- conf.m[1, 1] / sum(conf.m[1, ])
+  
+C <- sum(diag(conf.m)) / sum(conf.m)
+
+
+name <- c("Чувствительность", "Специфичность", "верность")
+ABC <- c(A, B, C)
+
+har <- data.frame(Название = name, Значение = ABC) 
+har
+```
