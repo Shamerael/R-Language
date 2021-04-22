@@ -1,0 +1,379 @@
+---
+title: "Упражнение № 7"
+author: "Спиридонова Алина"
+date: "10 04 2021"
+output: html_document
+---
+
+Необходимо построить две модели:
+
+- зависимости непрерывного отклика от одного непрерывного предиктора; 
+- зависимости вероятности (логит) от одного непрерывного предиктора.
+
+
+Для каждой модели:
+
+1 Указать смысл переменных модели, метод оценки и настроечный параметр (степень полинома, гиперпараметр λ, ширина окна s, число узлов – в зависимости от метода).
+
+2 Подогнать модель на всех наблюдениях, меняя значение настроечного параметра.
+
+3 Обосновать оптимальное значение настроечного параметра подходящим методом (кросс-валидация, ANOVA).
+
+4 Сделать прогноз на обучающую выборку по лучшей модели: модельные значения и ошибки прогноза.
+
+5 Построить график с фактическими наблюдениями, модельной кривой и 95% доверительными интервалами прогноза.
+
+В таблице ниже указаны набор данных, столбцы с переменными для модели и метод подгонки.
+
+
+## Вариант № 24 (6)
+
+Модели: Полиномиальный сплайн.
+
+Данные: *Boston {MASS}*.
+
+```{r setup, include=FALSE}
+
+library('MASS')              # набор данных Auto
+library('splines')           # сплайны
+library('gam')               # обобщённые аддитивные модели
+library('akima')             # график двумерной плоскости
+library('ggplot2')           # красивые графики
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Работаем с набором данных по стоимости жилья в пригороде Бостона. Присоединяем его к пространству имён функцией attach(), и дальше обращаемся напрямую к столбцам таблицы.
+
+```{r}
+# загрузка данных Boston
+data('Boston')
+
+# ядро
+my.seed <- 6
+attach(Boston)
+```
+
+Работаем со столбцами:
+
+- *indus* – доля нерозничных торговых площадей на город;
+- *nox* – концентрация оксидов азота (частей на 10 млн.)
+
+# Полиномиальный сплайн
+
+Судя по графику ниже, взаимосвязь доли торговых площадей и концентрацией оксидов азота. Наблюдается также группа наблюдений с высоким значением *indus*, граница проходит примерно на уровне 17.
+
+```{r}
+gp <- ggplot(data = Boston, aes(x = nox, y = indus))
+gp <- gp + geom_point() + geom_abline(slope = 0, intercept = 16.5, col = 'red')
+gp
+```
+
+## Сплайны
+
+Построим кубический сплайн с тремя узлами.
+
+```{r}
+# границы изменения переменной nox
+noxlims <- range(nox)
+
+# значения nox, для которых делаем прогноз (от min до max с шагом 1)
+nox.grid <- seq(from = noxlims[1], to = noxlims[2], length = 100)
+
+# кубический сплайн с тремя узлами
+fit <- lm(indus ~ bs(nox, knots = c(25, 40, 60)), data = Boston)
+# прогноз
+preds.spl <- predict(fit, newdata = list(nox = nox.grid), se = T)
+```
+Теперь построим натуральный по трём узлам. Три узла это 6 степеней свободы. Если функции bs(), которая создаёт матрицу с базисом для полиномиального сплайна, передать только степени свободы, она распределит узлы равномерно. В данном случае это квартили распределения *nox*.
+
+```{r}
+
+# 3 узла -- 6 степеней свободы (столбцы матрицы)
+dim(bs(nox, knots = c(25, 40, 60)))
+
+# если не указываем узлы явно...
+dim(bs(nox, df = 6))
+
+#  они привязываются к квартилям
+attr(bs(nox, df = 6), 'knots')
+
+# натуральный сплайн
+fit2 <- lm(indus ~ ns(nox, df = 4), data = Boston)
+
+preds.spl2 <- predict(fit2, newdata = list(nox = nox.grid), se = T)
+
+#График сравнения кубического и натурального сплайнов.
+
+par(mfrow = c(1, 1), mar = c(4.5, 4.5, 1, 8.5), oma = c(0, 0, 0, 0), xpd = T)
+
+# наблюдения
+plot(nox, indus, col = 'grey')
+
+# модель кубического сплайна
+lines(nox.grid, preds.spl$fit, lwd = 2)
+
+# доверительный интервал
+lines(nox.grid, preds.spl$fit + 2*preds.spl$se, lty = 'dashed')
+lines(nox.grid, preds.spl$fit - 2*preds.spl$se, lty = 'dashed')
+
+# натуральный сплайн
+lines(nox.grid, preds.spl2$fit, col = 'red', lwd = 2)
+
+# легенда
+legend("bottomright", inset = c(0, 0),
+       c('Кубический \n с 3 узлами', 'Натуральный'),
+       lwd = rep(2, 2), col = c('black', 'red'))
+
+# заголовок
+title("Сплайны")
+
+```
+
+
+Подгоняем полином четвёртой степени для зависимости заработной платы от возраста
+
+```{r}
+fit <- lm(indus ~ poly(nox, 3), data = Boston)
+round(coef(summary(fit)), 2)
+```
+
+Функция poly(nox, 3) создаёт таблицу с базисом ортогональных полиномов: линейные комбинации значений переменной nox в степенях от 1 до 3.
+
+```{r}
+round(head(poly(nox, 3)), 3)
+```
+
+можно получить сами значения nox в заданных степенях
+
+```{r}
+round(head(poly(nox, 3, raw = T)), 3)
+
+# на прогноз не повлияет, но оценки параметров изменяются
+fit.2 <- lm(indus ~ poly(nox, 3, raw = T), data = Boston)
+round(coef(summary(fit.2)), 2)
+
+# границы изменения переменной nox
+noxlims <- range(nox)
+
+# значения nox, для которых делаем прогноз (от min до max с шагом 1)
+nox.grid <- seq(from = noxlims[1], to = noxlims[2], length = 100)
+
+# рассчитать прогнозы и их стандартные ошибки
+preds <- predict(fit, newdata = list(nox = nox.grid), se = T)
+
+# границы доверительного интервала для заработной платы
+se.bands <- cbind(lower.bound = preds$fit - 2*preds$se.fit,
+                  upper.bound = preds$fit + 2*preds$se.fit)
+
+# смотрим результат
+round(head(se.bands), 2)
+```
+
+
+Убедимся, что прогнозы по моделям с различными вызовами poly() совпадают
+и подбираем степень полинома, сравнивая модели со степенями от 1 до 5 с помощью дисперсионного анализа (ANOVA)
+
+```{r}
+# прогнозы по второму вызову модели
+preds2 <- predict(fit.2, newdata = list(nox = nox.grid), se = T)
+
+# максимальное расхождение между прогнозами по двум вариантам вызова модели
+max(abs(preds$fit - preds2$fit))
+
+fit.1 <- lm(indus ~ nox, data = Boston)
+fit.2 <- lm(indus ~ poly(nox, 2), data = Boston)
+fit.3 <- lm(indus ~ poly(nox, 3), data = Boston)
+fit.4 <- lm(indus ~ poly(nox, 4), data = Boston)
+fit.5 <- lm(indus ~ poly(nox, 5), data = Boston)
+
+round(anova(fit.1, fit.2, fit.3, fit.4, fit.5), 2)
+```
+
+```{r}
+# Лучшая модель 
+best.fit.1 <- fit.4
+```
+
+
+Рассматриваются пять моделей, в которых степени полинома от *nox* идут по возрастанию. В крайнем правом столбце таблице приводятся p-значения для проверки нулевой гипотезы: текущая модель не даёт статистически значимого сокращения *RSS* по сравнению с предыдущей моделью. Можно сделать вывод, что степени 4 достаточно, дальнейшее увеличение степени не даёт значимого улучшения качества модели.
+
+Прогноз на обучающую выборку по лучшей модели (модель 1)
+
+```{r}
+# прогноз по лучшей модели
+preds <- predict(best.fit.1, data.frame(nox = nox.grid), se = T)
+
+# границы доверительного интервала для площади нерозничных торговых площадей
+se.bands <- cbind(lower.bound = preds$fit - 2*preds$se.fit,
+                  upper.bound = preds$fit + 2*preds$se.fit)
+
+# смотрим результат
+round(head(se.bands), 2)
+
+# Стандартные ошибки
+round(preds$se.fit, 2)
+```
+
+
+## График с фактическими наблюдениями, модельной кривой и 95% доверительными интервалами прогноза (модель 1)
+
+```{r}
+# сетка для графика
+plot(nox, indus, xlim = noxlims, type = 'n', ylab = 'P(Indus | nox)')
+
+# фактические наблюдения показываем засечками
+points(jitter(nox), indus, cex = 0.5, pch = '|', col = 'darkgrey')
+
+pfit <- preds$fit
+
+# модель
+lines(nox.grid, pfit, lwd = 2, col = 'blue')
+
+# доверительные интервалы
+matlines(nox.grid, se.bands, lwd = 1, col = 'blue', lty = 3)
+
+# заголовок
+title('Сплайн (модель 1)')
+```
+
+
+Зависимость вероятности доли торговых площадей > 16.5 от конценрации оксида азота (модель 2)
+
+```{r}
+# график
+plot(nox, I(indus > 16.5), xlim = noxlims, cex = 0.5, col = 'darkgrey', ylim = c(-0.1, 1.15))
+
+# подгоняем модель c окном 0.2
+fit3 <- loess(I(indus > 16.5) ~ nox, cv = 0.2, data = Boston)
+
+# подгоняем модель c окном 0.7
+fit4 <- loess(I(indus > 16.5) ~ nox, span = 0.7, data = Boston)
+
+# рисум модели
+lines(nox.grid, predict(fit3, data.frame(nox = nox.grid)),
+      col = 'red', lwd = 2)
+lines(nox.grid, predict(fit4, data.frame(nox = nox.grid)),
+      col = 'blue', lwd = 2)
+
+# легенда ,inset = c(0.5, 1)
+legend("bottomright",
+       c('Кубический \n с 3 узлами', 'Натуральный'),
+       lwd = rep(2, 2), col = c('black', 'red'))
+
+title('Сплайн')
+```
+
+## Определение оптимального настроечного параметра (модель 2)
+
+
+```{r}
+
+fit <- lm(indus ~ poly(nox, 3), data = Boston)
+round(coef(summary(fit)), 2)
+
+round(head(poly(nox, 3)), 3)
+
+round(head(poly(nox, 3, raw = T)), 3)
+
+# на прогноз не повлияет, но оценки параметров изменяются
+fit.2 <- lm(indus ~ poly(nox, 3, raw = T), data = Boston)
+round(coef(summary(fit.2)), 2)
+
+# границы изменения переменной nox
+noxlims <- range(nox)
+
+# значения nox, для которых делаем прогноз (от min до max с шагом 1)
+nox.grid <- seq(from = noxlims[1], to = noxlims[2], length = 100)
+
+# рассчитать прогнозы и их стандартные ошибки
+preds <- predict(fit, newdata = list(nox = nox.grid), se = T)
+
+# границы доверительного интервала для заработной платы
+se.bands <- cbind(lower.bound = preds$fit - 2*preds$se.fit,
+                  upper.bound = preds$fit + 2*preds$se.fit)
+
+# смотрим результат
+round(head(se.bands), 2)
+```
+
+
+Убедимся, что прогнозы по моделям с различными вызовами poly() совпадают
+и подбираем степень полинома, сравнивая модели со степенями от 1 до 5 с помощью дисперсионного анализа (ANOVA)
+
+```{r}
+# прогнозы по второму вызову модели
+preds2 <- predict(fit.2, newdata = list(nox = nox.grid), se = T)
+
+# максимальное расхождение между прогнозами по двум вариантам вызова модели
+max(abs(preds$fit - preds2$fit))
+
+fit.1 <- lm(I(indus>16.5) ~ nox, data = Boston)
+fit.2 <- lm(I(indus>16.5) ~ poly(nox, 2), data = Boston)
+fit.3 <- lm(I(indus>16.5) ~ poly(nox, 3), data = Boston)
+fit.4 <- lm(I(indus>16.5) ~ poly(nox, 4), data = Boston)
+fit.5 <- lm(I(indus>16.5) ~ poly(nox, 5), data = Boston)
+
+round(anova(fit.1, fit.2, fit.3, fit.4, fit.5), 2)
+```
+
+```{r}
+# Лучшая модель 
+best.fit.2 <- fit.4
+```
+
+## Прогноз на обучающую выборку по лучшей модели (модель 2)
+
+```{r}
+
+# Прогноз по лучшей модели
+preds <- predict(best.fit.2, data.frame(nox = nox.grid), se = T)
+
+# Границы доверительного интервала для площади нерозничных торговых площадей
+se.bands <- cbind(lower.bound = preds$fit - 2*preds$se.fit,
+                  upper.bound = preds$fit + 2*preds$se.fit)
+
+# Смотрим результат
+round(head(se.bands), 2)
+
+
+# Стандартные ошибки
+round(preds$se.fit, 2)
+```
+
+## График с фактическими наблюдениями, модельной кривой и 95% доверительными интервалами прогноза (модель 2)
+
+```{r}
+# Сетка для графика
+plot(nox, I(indus > 16.5), xlim = noxlims, type = 'n', ylim = c(-0.35, 1.5),
+     ylab = 'P(Indus > 16.5 | nox)')
+
+# Фактические наблюдения показываем засечки
+points(jitter(nox), indus, cex = 0.5, pch = '|', col = 'darkgrey')
+
+pfit <- preds$fit
+# Модель
+lines(nox.grid, pfit, lwd = 2, col = 'darkgreen')
+
+# Доверительные интервалы
+matlines(nox.grid, se.bands, lwd = 1, col = 'darkgreen', lty = 3)
+
+# Заголовок
+title('сплайны')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
